@@ -1,0 +1,165 @@
+---
+title: "Practical Machine Learning - Prediction Assignment Writeup"
+date: "June 21, 2015"
+output: html_document
+---
+
+# Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks.
+
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+# Goal
+The goal of this project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. We will use all of the other variables to predict with. This report describes how we built the model, how we used cross validation, what we think the expected out of sample error is, and why we made the choices we did. Finally we use the prediction model to predict 20 different test cases. 
+
+# Method
+## Load required libraries
+```{r}
+library(caret)
+library(kernlab)
+library(randomForest)
+library(corrplot)
+
+training <- 0
+crossval <- 0
+```
+## Get the data
+The training data for this project are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+The test data are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. 
+
+```{r}
+getData = function() {
+  message("Checking and if needed, creating data directory.")
+  if (!file.exists("data")) {
+    dir.create("data")
+  }
+  if (!file.exists("./data/pml-training.csv")) {
+    fileURLTrain <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+    fileUrlTest <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+    destfileTrain <- "./data/pml-training.csv"
+    destfileTest <- "./data/pml-testing.csv"
+    download.file(fileURLTrain, destfile=destfileTrain, method="curl")
+    download.file(fileUrlTest, destfile=destfileTest, method="curl")
+  }
+}
+```
+## Read the data
+The outcome variable is "classe" which is a factor variable with 5 levels.
+The set has nearly twenty thousand observations, with 160 features.
+```{r}
+readTrainingData = function() {
+  message("Reading training data.")
+  data_training <- read.csv("./data/pml-training.csv", na.strings= c("NA",""," "))
+  data_training
+}
+
+```
+## Clean data
+First we need to remove data with missing values and then descriptive fields.
+```{r}
+cleanTrainingData = function(x) {
+  message("Cleaning training data.")
+  data_training_NAs <- apply(x, 2, function(x) {sum(is.na(x))})
+  data_training_clean <- x[,which(data_training_NAs == 0)]
+  
+  # remove identifier columns
+  data_training_clean <- data_training_clean[8:length(data_training_clean)]
+  data_training_clean
+}
+```
+## Partition
+We separate our data into a training and cross validation test set.
+```{r}
+partitionTrainingData = function(x) {
+  message("Partition the testing data into training and cross validation sets.")
+  inTrain <- createDataPartition(y = x$classe, p = 0.7, list = FALSE)
+  training <<- x[inTrain, ]
+  crossval <<- x[-inTrain, ]
+}
+```
+## Predictor Strength
+View the correlation matrix plot below:
+This plot will help us determine the strength of our predictor variables.
+```{r}
+predictorStrength = function(x) {
+  message("Evaluate the value of various predictors using a correlation matrix.")
+  correlMatrix <- cor(x[, -length(x)])
+  corrplot(correlMatrix, order = "FPC", method = "circle", type = "lower", tl.cex = 0.8,  tl.col = rgb(0, 0, 0))
+}
+```
+## Model Selection
+We will use a random forest as our model based on the set of predictors and their associated type and strength.
+```{r}
+createModel = function(x) {
+  message("Fit a Random Forest Classifier to predict the classe using all remaining variables as predictors.")
+  model <- randomForest(classe ~ ., data = x)
+  model
+}
+```
+## Cross Validation
+We can test our model on the subset of the training data we set aside earlier as our cross validation set, and view the associated error. See confusion matrix table below:
+Our cross validation accuracy is 99.5% and the out-of-sample erros is 0.5%, indicating that our model performs well.
+```{r}
+crossValidate = function(model, crossval) {
+  message("Evaluate out of sample error using our cross validation data set.")
+  predictCrossVal <- predict(model, crossval)
+  confusionMatrix(crossval$classe, predictCrossVal)
+}
+```
+## Cleaning Test Data
+We as closely as possible, apply precisely the same cleaning functions to the test set as to the training set.
+```{r}
+cleanTestingData = function() {
+  message("Cleaning training data.")
+  data_test <- read.csv("./data/pml-testing.csv", na.strings= c("NA",""," "))
+  data_test_NAs <- apply(data_test, 2, function(x) {sum(is.na(x))})
+  data_test_clean <- data_test[,which(data_test_NAs == 0)]
+  data_test_clean <- data_test_clean[8:length(data_test_clean)]
+  data_test_clean
+}
+```
+## Prediction
+Here are our models prediction on our test set.
+```{r}
+predictClasses = function(data_test_clean) {
+  message("Predict the classes of the test set, based on model created on training set.")
+  predictTest <- predict(model, data_test_clean)
+  predictTest
+}
+```
+## Results
+Now we can write out our predictions to a file for manual submission.
+```{r}
+writePredictions = function(x){
+  message("Write out files for project submission and evaluation.")
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+```
+## Execute
+Call all functions to complete assignment.
+```{r}
+getData()
+data_training = readTrainingData()
+data_training_clean = cleanTrainingData(data_training)
+partitionTrainingData(data_training_clean)
+predictorStrength(training)
+model = createModel(training)
+crossValidate(model, crossval)
+data_test_clean = cleanTestingData()
+predictTest = predictClasses(data_test_clean)
+writePredictions(predictTest)
+
+```
+
